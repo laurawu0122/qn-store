@@ -26,15 +26,6 @@ class QiniuStore extends StorageBase {
     this.client = qn.create(this.options);
   }
 
-  /**
-   * Saves the image to storage
-   * - image is the express image object
-   * - returns a promise which ultimately returns the full url to the uploaded image
-   *
-   * @param file
-   * @param targetDir
-   * @returns {*}
-   */
   save(file, targetDir) {
     const client = this.client;
     const _this = this;
@@ -44,71 +35,63 @@ class QiniuStore extends StorageBase {
         client.upload(fs.createReadStream(file.path), {
           key: key
         }, function(err, result) {
-          console.log(logPrefix, result);
-          // console.log('[' + err.code + '] ' + err.name);
           err ? reject(err) : resolve(result.url);
         });
       }));
     });
   }
 
-  /**
-   * don't need it in Qiniu
-   * @param filename
-   * @param targetDir
-   * @returns {*|bluebird}
-   * @see https://support.qiniu.com/hc/kb/article/112817/
-   * TODO: if fileKey option set, should use key to check file whether exists
-   */
+  saveRaw(buffer, targetPath) {
+    const client = this.client;
+    const origin = (this.options.origin || '').replace(/\/$/, '');
+    let key = targetPath.replace(/\\/g, '/');
+
+    const keyOptions = this.options.fileKey;
+    if (keyOptions && keyOptions.prefix) {
+      const getValue = function(obj) {
+        return typeof obj === 'function' ? obj() : obj;
+      };
+      const prefix = moment().format(getValue(keyOptions.prefix))
+        .replace(/^\//, '');
+      key = prefix + key;
+    }
+
+    return new Promise(function(resolve, reject) {
+      client.upload(buffer, { key: key }, function(err, result) {
+        if (err) {
+          return reject(err);
+        }
+        resolve(result.url || (origin + '/' + key));
+      });
+    });
+  }
+
+  urlToPath(url) {
+    const origin = (this.options.origin || '').replace(/\/$/, '');
+    if (url.startsWith(origin + '/')) {
+      return url.slice(origin.length + 1);
+    }
+    return urlParse(url).pathname.slice(1);
+  }
+
   exists(filename, targetDir) {
     return new Promise(function(resolve, reject) {
       resolve(false);
     });
   }
 
-  /*
-  exists(filename) {
-    return new Promise(function(resolve, reject) {
-      // send key to get image info
-      client.stat(filename, function(err, info) {
-        if (info) {
-          resolve(true);
-        } else if (err && err.code === 612) { // File not exists
-          resolve(false);
-        } else {
-          reject('Can\'t get file info.');
-        }
-      });
-    });
-  }*/
-
-  // middleware for serving the files
   serve() {
-    // a no-op, these are absolute URLs
     return function(req, res, next) {
       next();
     };
   }
 
-  /**
-   * Not implemented.
-   * @description not really delete from Qiniu, may be implemented later
-   * @param fileName
-   * @param targetDir
-   * @returns {*|bluebird}
-   */
   delete(fileName, targetDir) {
-    // return Promise.reject('not implemented');
     return new Promise(function(resolve, reject) {
       resolve(true);
     });
   }
 
-  /**
-   * Reads bytes from Qiniu for a target image
-   *
-   * @param options
-   */
   read(options) {
     options = options || {};
 
